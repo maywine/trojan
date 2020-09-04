@@ -28,6 +28,7 @@ add_executable(trojan
     src/session/serversession.cpp
     src/session/session.cpp
     src/session/udpforwardsession.cpp
+    src/session/http_parse.cpp
     src/ssl/ssldefaults.cpp
     src/ssl/sslsession.cpp)
 include_directories(src)

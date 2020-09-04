@@ -164,7 +164,14 @@ void ServerSession::in_recv(const string &data) {
                 return config.remote_port;
             }
             auto it = config.ssl.alpn_port_override.find(string(alpn_out, alpn_out + alpn_len));
-            return it == config.ssl.alpn_port_override.end() ? config.remote_port : it->second;
+            if (it == config.ssl.alpn_port_override.end()) {
+                return config.remote_port;
+            } else {
+                if (it->first == config.http_server.http_version) {
+                    is_forward_to_http = true;
+                }
+                return it->second;
+            }
         }());
         if (valid) {
             out_write_buf = req.payload;
@@ -179,7 +186,9 @@ void ServerSession::in_recv(const string &data) {
             }
         } else {
             Log::log_with_endpoint(in_endpoint, "not trojan request, connecting to " + query_addr + ':' + query_port, Log::WARN);
-            out_write_buf = data;
+            if (is_forward_to_http) {
+                return process_http_request(data);
+            }
         }
         sent_len += out_write_buf.length();
         auto self = shared_from_this();
@@ -236,6 +245,9 @@ void ServerSession::in_recv(const string &data) {
             });
         });
     } else if (status == FORWARD) {
+        if (is_forward_to_http){
+            return process_http_request(data);
+        }
         sent_len += data.length();
         out_async_write(data);
     } else if (status == UDP_FORWARD) {
@@ -245,6 +257,10 @@ void ServerSession::in_recv(const string &data) {
 }
 
 void ServerSession::in_sent() {
+    if (is_forward_to_http) {
+        return;
+    }
+
     if (status == FORWARD) {
         out_async_read();
     } else if (status == UDP_FORWARD) {
@@ -363,5 +379,76 @@ void ServerSession::destroy() {
         in_socket.async_shutdown(ssl_shutdown_cb);
         ssl_shutdown_timer.expires_after(chrono::seconds(SSL_SHUTDOWN_TIMEOUT));
         ssl_shutdown_timer.async_wait(ssl_shutdown_cb);
+    }
+}
+
+void ServerSession::process_http_request(const std::string &data)
+{
+    try
+    {
+        static const std::string resp_404_str = "<html>"
+                                                "<head><title>404 Not Found</title></head>"
+                                                "<body>"
+                                                "<center><h1>404 Not Found</h1></center>"
+                                                "<hr><center>nginx/1.18.0 (Ubuntu)</center>"
+                                                "</body>"
+                                                "</html>";
+
+        static const std::string resp_403_str = "<html>"
+                                                "<head><title>403 Forbidden</title></head>"
+                                                "<body>"
+                                                "<center><h1>403 Forbidden</h1></center>"
+                                                "<hr><center>nginx/1.18.0 (Ubuntu)</center>"
+                                                "</body>"
+                                                "</html>";
+
+        if (!http_req_parse.ParseHttpRequset(data.c_str(), data.size()))
+        {
+            destroy();
+            return;
+        }
+
+        if (http_req_parse.parse_done())
+        {
+            std::map<std::string, std::string> resp_map = {
+                {"Connection", "keep-alive"},
+                {"Content-Type", "text/html"},
+                {"Server", "nginx/1.18.0 (Ubuntu)"}};
+
+            std::string date;
+            date.resize(sizeof("Mon, 28 Sep 1970 06:00:00 GMT"));
+            struct tm data_tm;
+            memset(&data_tm, 0, sizeof(data_tm));
+            auto now = time(nullptr);
+            localtime_r(&now, &data_tm);
+            auto ret = strftime(&date[0], date.size(), "%a, %d %b %Y %T UTC", &data_tm);
+            if (ret > 0)
+            {
+                date.resize(ret);
+            }
+            resp_map.emplace("Date", std::move(date));
+
+            const auto &req = http_req_parse.http_requset();
+
+            if (req.http_version != "1.1" || req.method != "POST" || req.path != "/ip")
+            {
+                auto resp_str = make_respone("404 Not Found", &resp_404_str, resp_map);
+                return in_async_write(resp_str);
+            }
+
+            if (req.requset_body != config.http_server.key)
+            {
+                auto resp_str = make_respone("403 Forbidden", &resp_403_str, resp_map);
+                return in_async_write(resp_str);
+            }
+
+            auto client_ip = in_socket.lowest_layer().remote_endpoint().address().to_string();
+            auto resp_str = make_respone("200 OK", &client_ip, resp_map);
+            return in_async_write(resp_str);
+        }
+    }
+    catch (...)
+    {
+        destroy();
     }
 }

@@ -83,6 +83,12 @@ public:
         std::string cert;
         std::string ca;
     } mysql;
+    class HttpServer
+    {
+    public:
+        std::string http_version;
+        std::string key;
+    } http_server;
     void load(const std::string &filename);
     void populate(const std::string &JSON);
     bool sip003();

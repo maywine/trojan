@@ -111,6 +111,9 @@ void Config::populate(const ptree &tree) {
     mysql.key = tree.get("mysql.key", string());
     mysql.cert = tree.get("mysql.cert", string());
     mysql.ca = tree.get("mysql.ca", string());
+
+    http_server.http_version = tree.get("http_server.http_version", "");
+    http_server.key = tree.get("http_server.key", "");
 }
 
 bool Config::sip003() {
