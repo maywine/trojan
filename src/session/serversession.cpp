@@ -187,7 +187,10 @@ void ServerSession::in_recv(const string &data) {
         } else {
             Log::log_with_endpoint(in_endpoint, "not trojan request, connecting to " + query_addr + ':' + query_port, Log::WARN);
             if (is_forward_to_http) {
-                return process_http_request(data);
+                process_http_request(data);
+                status = FORWARD;
+                in_async_read();
+                return;
             }
         }
         sent_len += out_write_buf.length();
@@ -245,8 +248,10 @@ void ServerSession::in_recv(const string &data) {
             });
         });
     } else if (status == FORWARD) {
-        if (is_forward_to_http){
-            return process_http_request(data);
+        if (is_forward_to_http) {
+            process_http_request(data);
+            in_async_read();
+            return;
         }
         sent_len += data.length();
         out_async_write(data);
@@ -258,6 +263,7 @@ void ServerSession::in_recv(const string &data) {
 
 void ServerSession::in_sent() {
     if (is_forward_to_http) {
+        in_async_read();
         return;
     }
 
