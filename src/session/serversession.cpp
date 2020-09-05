@@ -187,11 +187,13 @@ void ServerSession::in_recv(const string &data) {
         } else {
             Log::log_with_endpoint(in_endpoint, "not trojan request, connecting to " + query_addr + ':' + query_port, Log::WARN);
             if (is_forward_to_http) {
+                Log::log_with_endpoint(in_endpoint, "forward to self http server", Log::WARN);
                 process_http_request(data);
                 status = FORWARD;
                 in_async_read();
                 return;
             }
+            out_write_buf = data;
         }
         sent_len += out_write_buf.length();
         auto self = shared_from_this();
