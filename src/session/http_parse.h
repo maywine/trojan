@@ -107,7 +107,8 @@ public:
                 beg_ = header_end;
             }
         }
-        else if (parse_header_done_ && !parse_done_)
+        
+        if (parse_header_done_ && !parse_done_)
         {
             if (content_length_ < 0)
             {
@@ -219,7 +220,7 @@ private:
 
         std::size_t param_end;
         std::getline(iostr, line);
-        while ((param_end = line.find(':') != std::string::npos))
+        while ((param_end = line.find(':')) != std::string::npos)
         {
             std::size_t value_start = param_end + 1;
             if (value_start < line.size())
@@ -247,6 +248,7 @@ private:
                     http_requset_.headers.emplace(std::move(key), std::move(value));
                 }
             }
+            std::getline(iostr, line);
         }
 
         parse_header_done_ = true;
