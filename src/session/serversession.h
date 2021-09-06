@@ -20,46 +20,53 @@
 #ifndef _SERVERSESSION_H_
 #define _SERVERSESSION_H_
 
-#include "session.h"
-#include "http_parse.h"
-#include <boost/asio/ssl.hpp>
 #include "core/authenticator.h"
+#include "http_parse.h"
+#include "session.h"
+#include <boost/asio/ssl.hpp>
 
-class ServerSession : public Session {
+class ServerSession : public Session
+{
 private:
-    enum Status {
+    enum Status
+    {
         HANDSHAKE,
         FORWARD,
         UDP_FORWARD,
         DESTROY
     } status;
-    boost::asio::ssl::stream<boost::asio::ip::tcp::socket>in_socket;
+    boost::asio::ssl::stream<boost::asio::ip::tcp::socket> in_socket;
     boost::asio::ip::tcp::socket out_socket;
     boost::asio::ip::udp::resolver udp_resolver;
-    Authenticator *auth;
+    Authenticator* auth;
     std::string auth_password;
-    const std::string &plain_http_response;
+    const std::string& plain_http_response;
 
     bool is_forward_to_http = false;
     HttpRequestParse http_req_parse;
     void destroy();
     void in_async_read();
-    void in_async_write(const std::string &data);
-    void in_recv(const std::string &data);
+    void in_async_write(const std::string& data);
+    void in_recv(const std::string& data);
     void in_sent();
     void out_async_read();
-    void out_async_write(const std::string &data);
-    void out_recv(const std::string &data);
+    void out_async_write(const std::string& data);
+    void out_recv(const std::string& data);
     void out_sent();
     void udp_async_read();
-    void udp_async_write(const std::string &data, const boost::asio::ip::udp::endpoint &endpoint);
-    void udp_recv(const std::string &data, const boost::asio::ip::udp::endpoint &endpoint);
+    void udp_async_write(const std::string& data, const boost::asio::ip::udp::endpoint& endpoint);
+    void udp_recv(const std::string& data, const boost::asio::ip::udp::endpoint& endpoint);
     void udp_sent();
-    void process_http_request(const std::string &data);
+    void process_http_request(const std::string& data);
+
 public:
-    ServerSession(const Config &config, boost::asio::io_context &io_context, boost::asio::ssl::context &ssl_context, Authenticator *auth, const std::string &plain_http_response);
+    ServerSession(const Config& config,
+                  boost::asio::io_context& io_context,
+                  boost::asio::ssl::context& ssl_context,
+                  Authenticator* auth,
+                  const std::string& plain_http_response);
     boost::asio::ip::tcp::socket& accept_socket() override;
     void start() override;
 };
 
-#endif // _SERVERSESSION_H_
+#endif  // _SERVERSESSION_H_

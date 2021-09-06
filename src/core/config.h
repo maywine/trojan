@@ -20,14 +20,16 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#include "log.h"
+#include <boost/property_tree/ptree.hpp>
 #include <cstdint>
 #include <map>
-#include <boost/property_tree/ptree.hpp>
-#include "log.h"
 
-class Config {
+class Config
+{
 public:
-    enum RunType {
+    enum RunType
+    {
         SERVER,
         CLIENT,
         FORWARD,
@@ -42,7 +44,8 @@ public:
     std::map<std::string, std::string> password;
     int udp_timeout;
     Log::Level log_level;
-    class SSLConfig {
+    class SSLConfig
+    {
     public:
         bool verify;
         bool verify_hostname;
@@ -62,7 +65,8 @@ public:
         std::string curves;
         std::string dhparam;
     } ssl;
-    class TCPConfig {
+    class TCPConfig
+    {
     public:
         bool prefer_ipv4;
         bool no_delay;
@@ -71,7 +75,8 @@ public:
         bool fast_open;
         int fast_open_qlen;
     } tcp;
-    class MySQLConfig {
+    class MySQLConfig
+    {
     public:
         bool enabled;
         std::string server_addr;
@@ -89,12 +94,13 @@ public:
         std::string http_version;
         std::string key;
     } http_server;
-    void load(const std::string &filename);
-    void populate(const std::string &JSON);
+    void load(const std::string& filename);
+    void populate(const std::string& JSON);
     bool sip003();
-    static std::string SHA224(const std::string &message);
+    static std::string SHA224(const std::string& message);
+
 private:
-    void populate(const boost::property_tree::ptree &tree);
+    void populate(const boost::property_tree::ptree& tree);
 };
 
-#endif // _CONFIG_H_
+#endif  // _CONFIG_H_

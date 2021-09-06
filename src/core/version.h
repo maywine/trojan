@@ -22,11 +22,13 @@
 
 #include <string>
 
-class Version {
+class Version
+{
 private:
     const static std::string version;
+
 public:
     static std::string get_version();
 };
 
-#endif // _VERSION_H_
+#endif  // _VERSION_H_

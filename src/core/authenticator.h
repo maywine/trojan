@@ -22,23 +22,26 @@
 
 #ifdef ENABLE_MYSQL
 #include <mysql.h>
-#endif // ENABLE_MYSQL
+#endif  // ENABLE_MYSQL
 #include "config.h"
 
-class Authenticator {
+class Authenticator
+{
 private:
 #ifdef ENABLE_MYSQL
-    MYSQL con{};
-#endif // ENABLE_MYSQL
-    enum {
-        PASSWORD_LENGTH=56
+    MYSQL con {};
+#endif  // ENABLE_MYSQL
+    enum
+    {
+        PASSWORD_LENGTH = 56
     };
-    static bool is_valid_password(const std::string &password);
+    static bool is_valid_password(const std::string& password);
+
 public:
-    explicit Authenticator(const Config &config);
-    bool auth(const std::string &password);
-    void record(const std::string &password, uint64_t download, uint64_t upload);
+    explicit Authenticator(const Config& config);
+    bool auth(const std::string& password);
+    void record(const std::string& password, uint64_t download, uint64_t upload);
     ~Authenticator();
 };
 
-#endif // _AUTHENTICATOR_H_
+#endif  // _AUTHENTICATOR_H_

@@ -1,26 +1,26 @@
 #pragma once
 
-#include <string>
-#include <sstream>
-#include <map>
-#include <vector>
-#include <unordered_map>
-#include <boost/functional/hash.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/functional/hash.hpp>
+#include <map>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-std::string make_request(const std::string &request_type,
-                         const std::string &host,
-                         const std::string &path = "/",
-                         const std::string *request = nullptr,
-                         const std::map<std::string, std::string> &header = std::map<std::string, std::string>());
+std::string make_request(const std::string& request_type,
+                         const std::string& host,
+                         const std::string& path                          = "/",
+                         const std::string* request                       = nullptr,
+                         const std::map<std::string, std::string>& header = std::map<std::string, std::string>());
 
-std::string make_respone(const std::string &status_code,
-                         const std::string *respone = nullptr,
-                         const std::map<std::string, std::string> &header = std::map<std::string, std::string>());
+std::string make_respone(const std::string& status_code,
+                         const std::string* respone                       = nullptr,
+                         const std::map<std::string, std::string>& header = std::map<std::string, std::string>());
 
 struct CaseInsensitiveEquals
 {
-    bool operator()(const std::string &key1, const std::string &key2) const
+    bool operator()(const std::string& key1, const std::string& key2) const
     {
         return boost::algorithm::iequals(key1, key2);
     }
@@ -28,10 +28,10 @@ struct CaseInsensitiveEquals
 
 struct CaseInsensitiveHash
 {
-    std::size_t operator()(const std::string &key) const
+    std::size_t operator()(const std::string& key) const
     {
         std::size_t seed = 0;
-        for (const auto &c : key)
+        for (const auto& c : key)
         {
             boost::hash_combine(seed, std::tolower(c));
         }
@@ -65,13 +65,10 @@ public:
         }
     };
 
-    HttpRequestParse()
-    {
-        buf_vec_.resize(1024);
-    }
+    HttpRequestParse() { buf_vec_.resize(1024); }
     ~HttpRequestParse() = default;
 
-    bool ParseHttpRequset(const char *data, const uint32_t data_len)
+    bool ParseHttpRequset(const char* data, const uint32_t data_len)
     {
         if (data_len == 0)
         {
@@ -87,7 +84,7 @@ public:
             if (data_len > (buf_vec_.size() - end_))
             {
                 std::size_t resize = buf_vec_.size() * 2;
-                resize = (resize - end_) < data_len ? (resize + data_len) : resize;
+                resize             = (resize - end_) < data_len ? (resize + data_len) : resize;
                 buf_vec_.resize(resize);
             }
         }
@@ -107,7 +104,7 @@ public:
                 beg_ = header_end;
             }
         }
-        
+
         if (parse_header_done_ && !parse_done_)
         {
             if (content_length_ < 0)
@@ -130,30 +127,21 @@ public:
     void Reset()
     {
         parse_header_done_ = false;
-        parse_done_ = false;
-        content_length_ = -1;
-        beg_ = 0;
-        end_ = 0;
+        parse_done_        = false;
+        content_length_    = -1;
+        beg_               = 0;
+        end_               = 0;
         http_requset_.Clear();
     }
 
-    inline bool parse_done() const
-    {
-        return parse_done_;
-    }
+    inline bool parse_done() const { return parse_done_; }
 
-    inline const HttpRequset &http_requset() const
-    {
-        return http_requset_;
-    }
+    inline const HttpRequset& http_requset() const { return http_requset_; }
 
 private:
-    inline char *Pos(uint64_t pos)
-    {
-        return &buf_vec_[pos];
-    }
+    inline char* Pos(uint64_t pos) { return &buf_vec_[pos]; }
 
-    uint64_t FindFirstOf(const std::string &str)
+    uint64_t FindFirstOf(const std::string& str)
     {
         if (str.empty())
         {
@@ -214,8 +202,8 @@ private:
             return false;
         }
 
-        http_requset_.method = line.substr(0, method_end);
-        http_requset_.path = line.substr(method_end + 1, path_end - method_end - 1);
+        http_requset_.method       = line.substr(0, method_end);
+        http_requset_.path         = line.substr(method_end + 1, path_end - method_end - 1);
         http_requset_.http_version = line.substr(protocol_end + 1, line.size() - protocol_end - 2);
 
         std::size_t param_end;
@@ -232,7 +220,7 @@ private:
 
                 if (value_start < line.size())
                 {
-                    auto key = line.substr(0, param_end);
+                    auto key   = line.substr(0, param_end);
                     auto value = line.substr(value_start, line.size() - value_start - 1);
                     if (key == "Content-Length")
                     {
@@ -256,10 +244,10 @@ private:
     }
 
     bool parse_header_done_ = false;
-    bool parse_done_ = false;
+    bool parse_done_        = false;
     int64_t content_length_ = -1;
-    uint64_t beg_ = 0;
-    uint64_t end_ = 0;
+    uint64_t beg_           = 0;
+    uint64_t end_           = 0;
     std::vector<char> buf_vec_;
     HttpRequset http_requset_;
 };
