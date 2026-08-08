@@ -21,7 +21,6 @@
 #define _SERVERSESSION_H_
 
 #include "core/authenticator.h"
-#include "http_parse.h"
 #include "session.h"
 #include <boost/asio/ssl.hpp>
 
@@ -42,8 +41,6 @@ private:
     std::string auth_password;
     const std::string& plain_http_response;
 
-    bool is_forward_to_http = false;
-    HttpRequestParse http_req_parse;
     void destroy();
     void in_async_read();
     void in_async_write(const std::string& data);
@@ -57,7 +54,6 @@ private:
     void udp_async_write(const std::string& data, const boost::asio::ip::udp::endpoint& endpoint);
     void udp_recv(const std::string& data, const boost::asio::ip::udp::endpoint& endpoint);
     void udp_sent();
-    void process_http_request(const std::string& data);
 
 public:
     ServerSession(const Config& config,
