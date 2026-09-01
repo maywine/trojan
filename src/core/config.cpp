@@ -108,27 +108,32 @@ void Config::populate(const ptree& tree)
             ssl.alpn_port_override[item.first] = item.second.get_value<uint16_t>();
         }
     }
-    ssl.reuse_session       = tree.get("ssl.reuse_session", true);
-    ssl.session_ticket      = tree.get("ssl.session_ticket", false);
-    ssl.session_timeout     = tree.get("ssl.session_timeout", long(600));
-    ssl.plain_http_response = tree.get("ssl.plain_http_response", string());
-    ssl.curves              = tree.get("ssl.curves", string());
-    ssl.dhparam             = tree.get("ssl.dhparam", string());
-    tcp.prefer_ipv4         = tree.get("tcp.prefer_ipv4", false);
-    tcp.no_delay            = tree.get("tcp.no_delay", true);
-    tcp.keep_alive          = tree.get("tcp.keep_alive", true);
-    tcp.reuse_port          = tree.get("tcp.reuse_port", false);
-    tcp.fast_open           = tree.get("tcp.fast_open", false);
-    tcp.fast_open_qlen      = tree.get("tcp.fast_open_qlen", 20);
-    mysql.enabled           = tree.get("mysql.enabled", false);
-    mysql.server_addr       = tree.get("mysql.server_addr", string("127.0.0.1"));
-    mysql.server_port       = tree.get("mysql.server_port", uint16_t(3306));
-    mysql.database          = tree.get("mysql.database", string("trojan"));
-    mysql.username          = tree.get("mysql.username", string("trojan"));
-    mysql.password          = tree.get("mysql.password", string());
-    mysql.key               = tree.get("mysql.key", string());
-    mysql.cert              = tree.get("mysql.cert", string());
-    mysql.ca                = tree.get("mysql.ca", string());
+    ssl.reuse_session          = tree.get("ssl.reuse_session", true);
+    ssl.session_ticket         = tree.get("ssl.session_ticket", false);
+    ssl.session_timeout        = tree.get("ssl.session_timeout", long(600));
+    ssl.plain_http_response    = tree.get("ssl.plain_http_response", string());
+    ssl.curves                 = tree.get("ssl.curves", string());
+    ssl.dhparam                = tree.get("ssl.dhparam", string());
+    tcp.prefer_ipv4            = tree.get("tcp.prefer_ipv4", false);
+    tcp.no_delay               = tree.get("tcp.no_delay", true);
+    tcp.keep_alive             = tree.get("tcp.keep_alive", true);
+    tcp.reuse_port             = tree.get("tcp.reuse_port", false);
+    tcp.fast_open              = tree.get("tcp.fast_open", false);
+    tcp.fast_open_qlen         = tree.get("tcp.fast_open_qlen", 20);
+    dns.timeout                = tree.get("dns.timeout", 5);
+    dns.cache_timeout          = tree.get("dns.cache_timeout", 60);
+    dns.negative_cache_timeout = tree.get("dns.negative_cache_timeout", 30);
+    dns.threads                = tree.get("dns.threads", 4U);
+    dns.max_pending            = tree.get("dns.max_pending", 64U);
+    mysql.enabled              = tree.get("mysql.enabled", false);
+    mysql.server_addr          = tree.get("mysql.server_addr", string("127.0.0.1"));
+    mysql.server_port          = tree.get("mysql.server_port", uint16_t(3306));
+    mysql.database             = tree.get("mysql.database", string("trojan"));
+    mysql.username             = tree.get("mysql.username", string("trojan"));
+    mysql.password             = tree.get("mysql.password", string());
+    mysql.key                  = tree.get("mysql.key", string());
+    mysql.cert                 = tree.get("mysql.cert", string());
+    mysql.ca                   = tree.get("mysql.ca", string());
 }
 
 bool Config::sip003()

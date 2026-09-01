@@ -38,6 +38,13 @@ In this page, we will look at the config file of trojan. Trojan uses [`JSON`](ht
         "reuse_port": false,
         "fast_open": false,
         "fast_open_qlen": 20
+    },
+    "dns": {
+        "timeout": 5,
+        "cache_timeout": 60,
+        "negative_cache_timeout": 30,
+        "threads": 4,
+        "max_pending": 64
     }
 }
 ```
@@ -66,6 +73,12 @@ In this page, we will look at the config file of trojan. Trojan uses [`JSON`](ht
     - `reuse_port`: whether to enable TCP port reuse (kernel support required)
     - `fast_open`: whether to enable TCP Fast Open (kernel support required)
     - `fast_open_qlen`: the server's limit on the size of the queue of TFO requests that have not yet completed the three-way handshake
+- `dns`: shared DNS resolver settings for every run type
+    - `timeout`: maximum time in seconds a caller waits for a DNS result
+    - `cache_timeout`: how long successful results are cached, in seconds
+    - `negative_cache_timeout`: how long failures and timeouts are cached, in seconds
+    - `threads`: number of isolated blocking resolver workers
+    - `max_pending`: maximum number of distinct operating-system lookups waiting or running; excess requests fail fast
 
 ## A valid forward.json
 
@@ -194,6 +207,13 @@ The NAT config is for transparent proxy. You'll need to [setup iptables rules](h
         "fast_open": false,
         "fast_open_qlen": 20
     },
+    "dns": {
+        "timeout": 5,
+        "cache_timeout": 60,
+        "negative_cache_timeout": 30,
+        "threads": 4,
+        "max_pending": 64
+    },
     "mysql": {
         "enabled": false,
         "server_addr": "127.0.0.1",
@@ -237,6 +257,7 @@ The NAT config is for transparent proxy. You'll need to [setup iptables rules](h
     - `reuse_port`: whether to enable TCP port reuse (kernel support required)
     - `fast_open`: whether to enable TCP Fast Open (kernel support required)
     - `fast_open_qlen`: the server's limit on the size of the queue of TFO requests that have not yet completed the three-way handshake
+- `dns`: see the shared DNS resolver settings in the client configuration above
 - `mysql`: see [Authenticator](authenticator)
 
 [Homepage](.) | [Prev Page](protocol) | [Next Page](authenticator)

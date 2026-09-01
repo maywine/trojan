@@ -36,7 +36,7 @@ private:
     } status;
     boost::asio::ssl::stream<boost::asio::ip::tcp::socket> in_socket;
     boost::asio::ip::tcp::socket out_socket;
-    boost::asio::ip::udp::resolver udp_resolver;
+    DNSResolver::Request udp_resolve_request;
     Authenticator* auth;
     std::string auth_password;
     const std::string& plain_http_response;
@@ -58,6 +58,7 @@ private:
 public:
     ServerSession(const Config& config,
                   boost::asio::io_context& io_context,
+                  DNSResolver& dns_resolver,
                   boost::asio::ssl::context& ssl_context,
                   Authenticator* auth,
                   const std::string& plain_http_response);

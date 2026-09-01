@@ -51,6 +51,7 @@ private:
 public:
     UDPForwardSession(const Config& config,
                       boost::asio::io_context& io_context,
+                      DNSResolver& dns_resolver,
                       boost::asio::ssl::context& ssl_context,
                       const boost::asio::ip::udp::endpoint& endpoint,
                       UDPWrite in_write);

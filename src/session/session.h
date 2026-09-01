@@ -21,6 +21,7 @@
 #define _SESSION_H_
 
 #include "core/config.h"
+#include "core/dnsresolver.h"
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/udp.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -44,14 +45,15 @@ protected:
     time_t start_time {};
     std::string out_write_buf;
     std::string udp_data_buf;
-    boost::asio::ip::tcp::resolver resolver;
+    DNSResolver& dns_resolver;
+    DNSResolver::Request resolve_request;
     boost::asio::ip::tcp::endpoint in_endpoint;
     boost::asio::ip::udp::socket udp_socket;
     boost::asio::ip::udp::endpoint udp_recv_endpoint;
     boost::asio::steady_timer ssl_shutdown_timer;
 
 public:
-    Session(const Config& config, boost::asio::io_context& io_context);
+    Session(const Config& config, boost::asio::io_context& io_context, DNSResolver& dns_resolver);
     virtual boost::asio::ip::tcp::socket& accept_socket() = 0;
     virtual void start()                                  = 0;
     virtual ~Session();

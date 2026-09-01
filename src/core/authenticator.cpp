@@ -91,7 +91,7 @@ bool Authenticator::auth(const string& password)
     }
     if (used >= quota)
     {
-        Log::log_with_date_time(password + " ran out of quota", Log::WARN);
+        Log::log_with_date_time("authenticated user ran out of quota", Log::WARN);
         return false;
     }
     return true;

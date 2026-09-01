@@ -75,6 +75,15 @@ public:
         bool fast_open;
         int fast_open_qlen;
     } tcp;
+    class DNSConfig
+    {
+    public:
+        int timeout;
+        int cache_timeout;
+        int negative_cache_timeout;
+        unsigned int threads;
+        unsigned int max_pending;
+    } dns;
     class MySQLConfig
     {
     public:

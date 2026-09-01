@@ -21,6 +21,7 @@
 #define _SERVICE_H_
 
 #include "authenticator.h"
+#include "dnsresolver.h"
 #include "session/udpforwardsession.h"
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/udp.hpp>
@@ -37,6 +38,7 @@ private:
     };
     const Config& config;
     boost::asio::io_context io_context;
+    DNSResolver dns_resolver;
     boost::asio::ip::tcp::acceptor socket_acceptor;
     boost::asio::ssl::context ssl_context;
     Authenticator* auth;

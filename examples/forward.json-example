@@ -32,5 +32,12 @@
         "reuse_port": false,
         "fast_open": false,
         "fast_open_qlen": 20
+    },
+    "dns": {
+        "timeout": 5,
+        "cache_timeout": 60,
+        "negative_cache_timeout": 30,
+        "threads": 4,
+        "max_pending": 64
     }
 }

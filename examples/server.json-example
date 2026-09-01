@@ -37,6 +37,13 @@
         "fast_open": false,
         "fast_open_qlen": 20
     },
+    "dns": {
+        "timeout": 5,
+        "cache_timeout": 60,
+        "negative_cache_timeout": 30,
+        "threads": 4,
+        "max_pending": 64
+    },
     "mysql": {
         "enabled": false,
         "server_addr": "127.0.0.1",

@@ -29,10 +29,11 @@ using namespace boost::asio::ssl;
 
 UDPForwardSession::UDPForwardSession(const Config& config,
                                      boost::asio::io_context& io_context,
+                                     DNSResolver& dns_resolver,
                                      context& ssl_context,
                                      const udp::endpoint& endpoint,
                                      UDPWrite in_write)
-    : Session(config, io_context),
+    : Session(config, io_context, dns_resolver),
       status(CONNECT),
       in_write(move(in_write)),
       out_socket(io_context, ssl_context),
@@ -70,11 +71,12 @@ void UDPForwardSession::start()
                            "forwarding UDP packets to " + config.target_addr + ':' + to_string(config.target_port)
                                + " via " + config.remote_addr + ':' + to_string(config.remote_port),
                            Log::INFO);
-    auto self = shared_from_this();
-    resolver.async_resolve(
+    auto self       = shared_from_this();
+    resolve_request = dns_resolver.async_resolve_tcp(
         config.remote_addr,
-        to_string(config.remote_port),
-        [this, self](const boost::system::error_code error, const tcp::resolver::results_type& results) {
+        config.remote_port,
+        [this, self](const boost::system::error_code error, const DNSResolver::TCPResults& results)
+        {
             if (error || results.empty())
             {
                 Log::log_with_endpoint(in_endpoint,
@@ -85,11 +87,10 @@ void UDPForwardSession::start()
                 return;
             }
             auto iterator = results.begin();
-            Log::log_with_endpoint(in_endpoint,
-                                   config.remote_addr + " is resolved to " + iterator->endpoint().address().to_string(),
-                                   Log::ALL);
+            Log::log_with_endpoint(
+                in_endpoint, config.remote_addr + " is resolved to " + iterator->address().to_string(), Log::ALL);
             boost::system::error_code ec;
-            out_socket.next_layer().open(iterator->endpoint().protocol(), ec);
+            out_socket.next_layer().open(iterator->protocol(), ec);
             if (ec)
             {
                 destroy();
@@ -111,45 +112,51 @@ void UDPForwardSession::start()
                 out_socket.next_layer().set_option(fastopen_connect(true), ec);
             }
 #endif  // TCP_FASTOPEN_CONNECT
-            out_socket.next_layer().async_connect(*iterator, [this, self](const boost::system::error_code error) {
-                if (error)
+            out_socket.next_layer().async_connect(
+                *iterator,
+                [this, self](const boost::system::error_code error)
                 {
-                    Log::log_with_endpoint(in_endpoint,
-                                           "cannot establish connection to remote server " + config.remote_addr + ':'
-                                               + to_string(config.remote_port) + ": " + error.message(),
-                                           Log::ERROR);
-                    destroy();
-                    return;
-                }
-                out_socket.async_handshake(stream_base::client, [this, self](const boost::system::error_code error) {
                     if (error)
                     {
                         Log::log_with_endpoint(in_endpoint,
-                                               "SSL handshake failed with " + config.remote_addr + ':'
-                                                   + to_string(config.remote_port) + ": " + error.message(),
+                                               "cannot establish connection to remote server " + config.remote_addr
+                                                   + ':' + to_string(config.remote_port) + ": " + error.message(),
                                                Log::ERROR);
                         destroy();
                         return;
                     }
-                    Log::log_with_endpoint(in_endpoint, "tunnel established");
-                    if (config.ssl.reuse_session)
-                    {
-                        auto ssl = out_socket.native_handle();
-                        if (!SSL_session_reused(ssl))
+                    out_socket.async_handshake(
+                        stream_base::client,
+                        [this, self](const boost::system::error_code error)
                         {
-                            Log::log_with_endpoint(in_endpoint, "SSL session not reused");
-                        }
-                        else
-                        {
-                            Log::log_with_endpoint(in_endpoint, "SSL session reused");
-                        }
-                    }
-                    status = FORWARDING;
-                    out_async_read();
-                    out_async_write(out_write_buf);
-                    out_write_buf.clear();
+                            if (error)
+                            {
+                                Log::log_with_endpoint(in_endpoint,
+                                                       "SSL handshake failed with " + config.remote_addr + ':'
+                                                           + to_string(config.remote_port) + ": " + error.message(),
+                                                       Log::ERROR);
+                                destroy();
+                                return;
+                            }
+                            Log::log_with_endpoint(in_endpoint, "tunnel established");
+                            if (config.ssl.reuse_session)
+                            {
+                                auto ssl = out_socket.native_handle();
+                                if (!SSL_session_reused(ssl))
+                                {
+                                    Log::log_with_endpoint(in_endpoint, "SSL session not reused");
+                                }
+                                else
+                                {
+                                    Log::log_with_endpoint(in_endpoint, "SSL session reused");
+                                }
+                            }
+                            status = FORWARDING;
+                            out_async_read();
+                            out_async_write(out_write_buf);
+                            out_write_buf.clear();
+                        });
                 });
-            });
         });
 }
 
@@ -167,7 +174,8 @@ void UDPForwardSession::out_async_read()
 {
     auto self = shared_from_this();
     out_socket.async_read_some(boost::asio::buffer(out_read_buf, MAX_LENGTH),
-                               [this, self](const boost::system::error_code error, size_t length) {
+                               [this, self](const boost::system::error_code error, size_t length)
+                               {
                                    if (error)
                                    {
                                        destroy();
@@ -183,7 +191,8 @@ void UDPForwardSession::out_async_write(const string& data)
     auto data_copy = make_shared<string>(data);
     boost::asio::async_write(out_socket,
                              boost::asio::buffer(*data_copy),
-                             [this, self, data_copy](const boost::system::error_code error, size_t) {
+                             [this, self, data_copy](const boost::system::error_code error, size_t)
+                             {
                                  if (error)
                                  {
                                      destroy();
@@ -197,13 +206,15 @@ void UDPForwardSession::timer_async_wait()
 {
     gc_timer.expires_after(chrono::seconds(config.udp_timeout));
     auto self = shared_from_this();
-    gc_timer.async_wait([this, self](const boost::system::error_code error) {
-        if (!error)
+    gc_timer.async_wait(
+        [this, self](const boost::system::error_code error)
         {
-            Log::log_with_endpoint(in_endpoint, "UDP session timeout");
-            destroy();
-        }
-    });
+            if (!error)
+            {
+                Log::log_with_endpoint(in_endpoint, "UDP session timeout");
+                destroy();
+            }
+        });
 }
 
 void UDPForwardSession::in_recv(const string& data)
@@ -291,12 +302,13 @@ void UDPForwardSession::destroy()
                            "disconnected, " + to_string(recv_len) + " bytes received, " + to_string(sent_len)
                                + " bytes sent, lasted for " + to_string(time(nullptr) - start_time) + " seconds",
                            Log::INFO);
-    resolver.cancel();
+    resolve_request.cancel();
     gc_timer.cancel();
     if (out_socket.next_layer().is_open())
     {
         auto self            = shared_from_this();
-        auto ssl_shutdown_cb = [this, self](const boost::system::error_code error) {
+        auto ssl_shutdown_cb = [this, self](const boost::system::error_code error)
+        {
             if (error == boost::asio::error::operation_aborted)
             {
                 return;

@@ -46,7 +46,10 @@ private:
     void out_sent();
 
 public:
-    ForwardSession(const Config& config, boost::asio::io_context& io_context, boost::asio::ssl::context& ssl_context);
+    ForwardSession(const Config& config,
+                   boost::asio::io_context& io_context,
+                   DNSResolver& dns_resolver,
+                   boost::asio::ssl::context& ssl_context);
     boost::asio::ip::tcp::socket& accept_socket() override;
     void start() override;
 };

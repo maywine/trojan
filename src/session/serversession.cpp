@@ -26,14 +26,14 @@ using namespace boost::asio::ssl;
 
 ServerSession::ServerSession(const Config& config,
                              boost::asio::io_context& io_context,
+                             DNSResolver& dns_resolver,
                              context& ssl_context,
                              Authenticator* auth,
                              const string& plain_http_response)
-    : Session(config, io_context),
+    : Session(config, io_context, dns_resolver),
       status(HANDSHAKE),
       in_socket(io_context, ssl_context),
       out_socket(io_context),
-      udp_resolver(io_context),
       auth(auth),
       plain_http_response(plain_http_response)
 {
@@ -52,30 +52,34 @@ void ServerSession::start()
         return;
     }
     auto self = shared_from_this();
-    in_socket.async_handshake(stream_base::server, [this, self](const boost::system::error_code error) {
-        if (error)
+    in_socket.async_handshake(
+        stream_base::server,
+        [this, self](const boost::system::error_code error)
         {
-            Log::log_with_endpoint(in_endpoint, "SSL handshake failed: " + error.message(), Log::ERROR);
-            if (error.message() == "http request" && !plain_http_response.empty())
+            if (error)
             {
-                recv_len += plain_http_response.length();
-                boost::asio::async_write(accept_socket(),
-                                         boost::asio::buffer(plain_http_response),
-                                         [this, self](const boost::system::error_code, size_t) { destroy(); });
+                Log::log_with_endpoint(in_endpoint, "SSL handshake failed: " + error.message(), Log::ERROR);
+                if (error.message() == "http request" && !plain_http_response.empty())
+                {
+                    recv_len += plain_http_response.length();
+                    boost::asio::async_write(accept_socket(),
+                                             boost::asio::buffer(plain_http_response),
+                                             [this, self](const boost::system::error_code, size_t) { destroy(); });
+                    return;
+                }
+                destroy();
                 return;
             }
-            destroy();
-            return;
-        }
-        in_async_read();
-    });
+            in_async_read();
+        });
 }
 
 void ServerSession::in_async_read()
 {
     auto self = shared_from_this();
     in_socket.async_read_some(boost::asio::buffer(in_read_buf, MAX_LENGTH),
-                              [this, self](const boost::system::error_code error, size_t length) {
+                              [this, self](const boost::system::error_code error, size_t length)
+                              {
                                   if (error)
                                   {
                                       destroy();
@@ -91,7 +95,8 @@ void ServerSession::in_async_write(const string& data)
     auto data_copy = make_shared<string>(data);
     boost::asio::async_write(in_socket,
                              boost::asio::buffer(*data_copy),
-                             [this, self, data_copy](const boost::system::error_code error, size_t) {
+                             [this, self, data_copy](const boost::system::error_code error, size_t)
+                             {
                                  if (error)
                                  {
                                      destroy();
@@ -105,7 +110,8 @@ void ServerSession::out_async_read()
 {
     auto self = shared_from_this();
     out_socket.async_read_some(boost::asio::buffer(out_read_buf, MAX_LENGTH),
-                               [this, self](const boost::system::error_code error, size_t length) {
+                               [this, self](const boost::system::error_code error, size_t length)
+                               {
                                    if (error)
                                    {
                                        destroy();
@@ -121,7 +127,8 @@ void ServerSession::out_async_write(const string& data)
     auto data_copy = make_shared<string>(data);
     boost::asio::async_write(out_socket,
                              boost::asio::buffer(*data_copy),
-                             [this, self, data_copy](const boost::system::error_code error, size_t) {
+                             [this, self, data_copy](const boost::system::error_code error, size_t)
+                             {
                                  if (error)
                                  {
                                      destroy();
@@ -136,7 +143,8 @@ void ServerSession::udp_async_read()
     auto self = shared_from_this();
     udp_socket.async_receive_from(boost::asio::buffer(udp_read_buf, MAX_LENGTH),
                                   udp_recv_endpoint,
-                                  [this, self](const boost::system::error_code error, size_t length) {
+                                  [this, self](const boost::system::error_code error, size_t length)
+                                  {
                                       if (error)
                                       {
                                           destroy();
@@ -152,7 +160,8 @@ void ServerSession::udp_async_write(const string& data, const udp::endpoint& end
     auto data_copy = make_shared<string>(data);
     udp_socket.async_send_to(boost::asio::buffer(*data_copy),
                              endpoint,
-                             [this, self, data_copy](const boost::system::error_code error, size_t) {
+                             [this, self, data_copy](const boost::system::error_code error, size_t)
+                             {
                                  if (error)
                                  {
                                      destroy();
@@ -178,24 +187,22 @@ void ServerSession::in_recv(const string& data)
                 {
                     valid         = true;
                     auth_password = req.password;
-                    Log::log_with_endpoint(
-                        in_endpoint, "authenticated by authenticator (" + req.password.substr(0, 7) + ')', Log::INFO);
+                    Log::log_with_endpoint(in_endpoint, "authenticated by authenticator", Log::INFO);
                 }
             }
             else
             {
-                Log::log_with_endpoint(in_endpoint, "authenticated as " + password_iterator->second, Log::INFO);
+                Log::log_with_endpoint(in_endpoint, "authenticated with configured credentials", Log::INFO);
             }
             if (!valid)
             {
-                Log::log_with_endpoint(in_endpoint,
-                                       "valid trojan request structure but possibly incorrect password (" + req.password
-                                           + ')',
-                                       Log::WARN);
+                Log::log_with_endpoint(
+                    in_endpoint, "valid trojan request structure but authentication failed", Log::WARN);
             }
         }
-        string query_addr = valid ? req.address.address : config.remote_addr;
-        string query_port = to_string([&]() {
+        string query_addr   = valid ? req.address.address : config.remote_addr;
+        uint16_t query_port = [&]()
+        {
             if (valid)
             {
                 return req.address.port;
@@ -209,7 +216,7 @@ void ServerSession::in_recv(const string& data)
             }
             auto it = config.ssl.alpn_port_override.find(string(alpn_out, alpn_out + alpn_len));
             return it == config.ssl.alpn_port_override.end() ? config.remote_port : it->second;
-        }());
+        }();
         if (valid)
         {
             out_write_buf = req.payload;
@@ -234,17 +241,19 @@ void ServerSession::in_recv(const string& data)
         }
         else
         {
-            Log::log_with_endpoint(
-                in_endpoint, "not trojan request, connecting to " + query_addr + ':' + query_port, Log::WARN);
+            Log::log_with_endpoint(in_endpoint,
+                                   "not trojan request, connecting to " + query_addr + ':' + to_string(query_port),
+                                   Log::WARN);
             out_write_buf = data;
         }
         sent_len += out_write_buf.length();
-        auto self = shared_from_this();
-        resolver.async_resolve(
+        auto self       = shared_from_this();
+        resolve_request = dns_resolver.async_resolve_tcp(
             query_addr,
             query_port,
             [this, self, query_addr, query_port](const boost::system::error_code error,
-                                                 const tcp::resolver::results_type& results) {
+                                                 const DNSResolver::TCPResults& results)
+            {
                 if (error || results.empty())
                 {
                     Log::log_with_endpoint(in_endpoint,
@@ -259,7 +268,7 @@ void ServerSession::in_recv(const string& data)
                 {
                     for (auto it = results.begin(); it != results.end(); ++it)
                     {
-                        const auto& addr = it->endpoint().address();
+                        const auto& addr = it->address();
                         if (addr.is_v4())
                         {
                             iterator = it;
@@ -267,11 +276,10 @@ void ServerSession::in_recv(const string& data)
                         }
                     }
                 }
-                Log::log_with_endpoint(in_endpoint,
-                                       query_addr + " is resolved to " + iterator->endpoint().address().to_string(),
-                                       Log::ALL);
+                Log::log_with_endpoint(
+                    in_endpoint, query_addr + " is resolved to " + iterator->address().to_string(), Log::ALL);
                 boost::system::error_code ec;
-                out_socket.open(iterator->endpoint().protocol(), ec);
+                out_socket.open(iterator->protocol(), ec);
                 if (ec)
                 {
                     destroy();
@@ -294,29 +302,31 @@ void ServerSession::in_recv(const string& data)
                     out_socket.set_option(fastopen_connect(true), ec);
                 }
 #endif  // TCP_FASTOPEN_CONNECT
-                out_socket.async_connect(
-                    *iterator, [this, self, query_addr, query_port](const boost::system::error_code error) {
-                        if (error)
-                        {
-                            Log::log_with_endpoint(in_endpoint,
-                                                   "cannot establish connection to remote server " + query_addr + ':'
-                                                       + query_port + ": " + error.message(),
-                                                   Log::ERROR);
-                            destroy();
-                            return;
-                        }
-                        Log::log_with_endpoint(in_endpoint, "tunnel established");
-                        status = FORWARD;
-                        out_async_read();
-                        if (!out_write_buf.empty())
-                        {
-                            out_async_write(out_write_buf);
-                        }
-                        else
-                        {
-                            in_async_read();
-                        }
-                    });
+                out_socket.async_connect(*iterator,
+                                         [this, self, query_addr, query_port](const boost::system::error_code error)
+                                         {
+                                             if (error)
+                                             {
+                                                 Log::log_with_endpoint(in_endpoint,
+                                                                        "cannot establish connection to remote server "
+                                                                            + query_addr + ':' + to_string(query_port)
+                                                                            + ": " + error.message(),
+                                                                        Log::ERROR);
+                                                 destroy();
+                                                 return;
+                                             }
+                                             Log::log_with_endpoint(in_endpoint, "tunnel established");
+                                             status = FORWARD;
+                                             out_async_read();
+                                             if (!out_write_buf.empty())
+                                             {
+                                                 out_async_write(out_write_buf);
+                                             }
+                                             else
+                                             {
+                                                 in_async_read();
+                                             }
+                                         });
             });
     }
     else if (status == FORWARD)
@@ -394,55 +404,55 @@ void ServerSession::udp_sent()
         Log::log_with_endpoint(in_endpoint,
                                "sent a UDP packet of length " + to_string(packet.length) + " bytes to "
                                    + packet.address.address + ':' + to_string(packet.address.port));
-        udp_data_buf      = udp_data_buf.substr(packet_len);
-        string query_addr = packet.address.address;
-        auto self         = shared_from_this();
-        udp_resolver.async_resolve(query_addr,
-                                   to_string(packet.address.port),
-                                   [this, self, packet, query_addr](const boost::system::error_code error,
-                                                                    const udp::resolver::results_type& results) {
-                                       if (error || results.empty())
-                                       {
-                                           Log::log_with_endpoint(in_endpoint,
-                                                                  "cannot resolve remote server hostname " + query_addr
-                                                                      + ": " + error.message(),
-                                                                  Log::ERROR);
-                                           destroy();
-                                           return;
-                                       }
-                                       auto iterator = results.begin();
-                                       if (config.tcp.prefer_ipv4)
-                                       {
-                                           for (auto it = results.begin(); it != results.end(); ++it)
-                                           {
-                                               const auto& addr = it->endpoint().address();
-                                               if (addr.is_v4())
-                                               {
-                                                   iterator = it;
-                                                   break;
-                                               }
-                                           }
-                                       }
-                                       Log::log_with_endpoint(in_endpoint,
-                                                              query_addr + " is resolved to "
-                                                                  + iterator->endpoint().address().to_string(),
-                                                              Log::ALL);
-                                       if (!udp_socket.is_open())
-                                       {
-                                           auto protocol = iterator->endpoint().protocol();
-                                           boost::system::error_code ec;
-                                           udp_socket.open(protocol, ec);
-                                           if (ec)
-                                           {
-                                               destroy();
-                                               return;
-                                           }
-                                           udp_socket.bind(udp::endpoint(protocol, 0));
-                                           udp_async_read();
-                                       }
-                                       sent_len += packet.length;
-                                       udp_async_write(packet.payload, *iterator);
-                                   });
+        udp_data_buf        = udp_data_buf.substr(packet_len);
+        string query_addr   = packet.address.address;
+        auto self           = shared_from_this();
+        udp_resolve_request = dns_resolver.async_resolve_udp(
+            query_addr,
+            packet.address.port,
+            [this, self, packet, query_addr](const boost::system::error_code error,
+                                             const DNSResolver::UDPResults& results)
+            {
+                if (error || results.empty())
+                {
+                    Log::log_with_endpoint(in_endpoint,
+                                           "cannot resolve remote server hostname " + query_addr + ": "
+                                               + error.message(),
+                                           Log::ERROR);
+                    destroy();
+                    return;
+                }
+                auto iterator = results.begin();
+                if (config.tcp.prefer_ipv4)
+                {
+                    for (auto it = results.begin(); it != results.end(); ++it)
+                    {
+                        const auto& addr = it->address();
+                        if (addr.is_v4())
+                        {
+                            iterator = it;
+                            break;
+                        }
+                    }
+                }
+                Log::log_with_endpoint(
+                    in_endpoint, query_addr + " is resolved to " + iterator->address().to_string(), Log::ALL);
+                if (!udp_socket.is_open())
+                {
+                    auto protocol = iterator->protocol();
+                    boost::system::error_code ec;
+                    udp_socket.open(protocol, ec);
+                    if (ec)
+                    {
+                        destroy();
+                        return;
+                    }
+                    udp_socket.bind(udp::endpoint(protocol, 0));
+                    udp_async_read();
+                }
+                sent_len += packet.length;
+                udp_async_write(packet.payload, *iterator);
+            });
     }
 }
 
@@ -462,8 +472,8 @@ void ServerSession::destroy()
         auth->record(auth_password, recv_len, sent_len);
     }
     boost::system::error_code ec;
-    resolver.cancel();
-    udp_resolver.cancel();
+    resolve_request.cancel();
+    udp_resolve_request.cancel();
     if (out_socket.is_open())
     {
         out_socket.cancel(ec);
@@ -478,7 +488,8 @@ void ServerSession::destroy()
     if (in_socket.next_layer().is_open())
     {
         auto self            = shared_from_this();
-        auto ssl_shutdown_cb = [this, self](const boost::system::error_code error) {
+        auto ssl_shutdown_cb = [this, self](const boost::system::error_code error)
+        {
             if (error == boost::asio::error::operation_aborted)
             {
                 return;

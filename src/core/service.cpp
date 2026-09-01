@@ -40,12 +40,31 @@ using namespace std;
 using namespace boost::asio::ip;
 using namespace boost::asio::ssl;
 
+namespace
+{
+DNSResolver::Options make_dns_options(const Config& config)
+{
+    DNSResolver::Options options;
+    options.timeout                = std::chrono::seconds(config.dns.timeout);
+    options.cache_timeout          = std::chrono::seconds(config.dns.cache_timeout);
+    options.negative_cache_timeout = std::chrono::seconds(config.dns.negative_cache_timeout);
+    options.threads                = config.dns.threads;
+    options.max_pending            = config.dns.max_pending;
+    return options;
+}
+}  // namespace
+
 #ifdef ENABLE_REUSE_PORT
 typedef boost::asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT> reuse_port;
 #endif  // ENABLE_REUSE_PORT
 
 Service::Service(Config& config, bool test)
-    : config(config), socket_acceptor(io_context), ssl_context(context::sslv23), auth(nullptr), udp_socket(io_context)
+    : config(config),
+      dns_resolver(io_context, make_dns_options(config)),
+      socket_acceptor(io_context),
+      ssl_context(context::sslv23),
+      auth(nullptr),
+      udp_socket(io_context)
 {
 #ifndef ENABLE_NAT
     if (config.run_type == Config::NAT)
@@ -89,8 +108,8 @@ Service::Service(Config& config, bool test)
     if (config.run_type == Config::SERVER)
     {
         ssl_context.use_certificate_chain_file(config.ssl.cert);
-        ssl_context.set_password_callback(
-            [this](size_t, context_base::password_purpose) { return this->config.ssl.key_password; });
+        ssl_context.set_password_callback([this](size_t, context_base::password_purpose)
+                                          { return this->config.ssl.key_password; });
         ssl_context.use_private_key_file(config.ssl.key, context::pem);
         if (config.ssl.prefer_server_cipher)
         {
@@ -105,7 +124,8 @@ Service::Service(Config& config, bool test)
                    unsigned char* outlen,
                    const unsigned char* in,
                    unsigned int inlen,
-                   void* config) -> int {
+                   void* config) -> int
+                {
                     if (SSL_select_next_proto((unsigned char**)out,
                                               outlen,
                                               (unsigned char*)(((Config*)config)->ssl.alpn.c_str()),
@@ -331,10 +351,12 @@ Service::Service(Config& config, bool test)
     if (Log::keylog)
     {
 #ifdef ENABLE_SSL_KEYLOG
-        SSL_CTX_set_keylog_callback(native_context, [](const SSL*, const char* line) {
-            fprintf(Log::keylog, "%s\n", line);
-            fflush(Log::keylog);
-        });
+        SSL_CTX_set_keylog_callback(native_context,
+                                    [](const SSL*, const char* line)
+                                    {
+                                        fprintf(Log::keylog, "%s\n", line);
+                                        fflush(Log::keylog);
+                                    });
 #else  // ENABLE_SSL_KEYLOG
         Log::log_with_date_time("SSL KeyLog is not supported", Log::WARN);
 #endif  // ENABLE_SSL_KEYLOG
@@ -390,38 +412,40 @@ void Service::async_accept()
     shared_ptr<Session> session(nullptr);
     if (config.run_type == Config::SERVER)
     {
-        session = make_shared<ServerSession>(config, io_context, ssl_context, auth, plain_http_response);
+        session = make_shared<ServerSession>(config, io_context, dns_resolver, ssl_context, auth, plain_http_response);
     }
     else if (config.run_type == Config::FORWARD)
     {
-        session = make_shared<ForwardSession>(config, io_context, ssl_context);
+        session = make_shared<ForwardSession>(config, io_context, dns_resolver, ssl_context);
     }
     else if (config.run_type == Config::NAT)
     {
-        session = make_shared<NATSession>(config, io_context, ssl_context);
+        session = make_shared<NATSession>(config, io_context, dns_resolver, ssl_context);
     }
     else
     {
-        session = make_shared<ClientSession>(config, io_context, ssl_context);
+        session = make_shared<ClientSession>(config, io_context, dns_resolver, ssl_context);
     }
-    socket_acceptor.async_accept(session->accept_socket(), [this, session](const boost::system::error_code error) {
-        if (error == boost::asio::error::operation_aborted)
-        {
-            // got cancel signal, stop calling myself
-            return;
-        }
-        if (!error)
-        {
-            boost::system::error_code ec;
-            auto endpoint = session->accept_socket().remote_endpoint(ec);
-            if (!ec)
-            {
-                Log::log_with_endpoint(endpoint, "incoming connection");
-                session->start();
-            }
-        }
-        async_accept();
-    });
+    socket_acceptor.async_accept(session->accept_socket(),
+                                 [this, session](const boost::system::error_code error)
+                                 {
+                                     if (error == boost::asio::error::operation_aborted)
+                                     {
+                                         // got cancel signal, stop calling myself
+                                         return;
+                                     }
+                                     if (!error)
+                                     {
+                                         boost::system::error_code ec;
+                                         auto endpoint = session->accept_socket().remote_endpoint(ec);
+                                         if (!ec)
+                                         {
+                                             Log::log_with_endpoint(endpoint, "incoming connection");
+                                             session->start();
+                                         }
+                                     }
+                                     async_accept();
+                                 });
 }
 
 void Service::udp_async_read()
@@ -429,7 +453,8 @@ void Service::udp_async_read()
     udp_socket.async_receive_from(
         boost::asio::buffer(udp_read_buf, MAX_LENGTH),
         udp_recv_endpoint,
-        [this](const boost::system::error_code error, size_t length) {
+        [this](const boost::system::error_code error, size_t length)
+        {
             if (error == boost::asio::error::operation_aborted)
             {
                 // got cancel signal, stop calling myself
@@ -461,9 +486,11 @@ void Service::udp_async_read()
             auto session = make_shared<UDPForwardSession>(
                 config,
                 io_context,
+                dns_resolver,
                 ssl_context,
                 udp_recv_endpoint,
-                [this](const udp::endpoint& endpoint, const string& data) {
+                [this](const udp::endpoint& endpoint, const string& data)
+                {
                     boost::system::error_code ec;
                     udp_socket.send_to(boost::asio::buffer(data), endpoint, 0, ec);
                     if (ec == boost::asio::error::no_permission)

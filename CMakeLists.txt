@@ -74,8 +74,15 @@ if(APPLE)
     target_link_libraries(trojan ${CoreFoundation} ${Security})
 endif()
 
+enable_testing()
+add_executable(DNSResolverTest tests/DNSResolverTest.cpp src/core/dnsresolver.cpp)
+target_include_directories(DNSResolverTest PRIVATE src ${Boost_INCLUDE_DIR})
+target_link_libraries(DNSResolverTest ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})
+add_test(NAME DNSResolverTest COMMAND DNSResolverTest)
+
 if(WIN32)
     target_link_libraries(trojan wsock32 ws2_32 crypt32)
+    target_link_libraries(DNSResolverTest wsock32 ws2_32)
 else()
     set(SYSTEMD_SERVICE AUTO CACHE STRING "Install systemd service")
     set_property(CACHE SYSTEMD_SERVICE PROPERTY STRINGS AUTO ON OFF)
@@ -106,7 +113,6 @@ else()
         install(FILES ${CMAKE_BINARY_DIR}/trojan.service ${CMAKE_BINARY_DIR}/trojan@.service DESTINATION ${SYSTEMD_SERVICE_PATH})
     endif()
 
-    enable_testing()
     add_test(NAME LinuxSmokeTest-basic
              COMMAND bash ${CMAKE_SOURCE_DIR}/tests/LinuxSmokeTest/basic.sh ${CMAKE_BINARY_DIR}/trojan)
     add_test(NAME LinuxSmokeTest-fake-client
