@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - "release/**"
     tags:
       - "v*"
   pull_request:
@@ -16,24 +17,56 @@ concurrency:
   group: build-release-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
-env:
-  PACKAGE_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
-
 jobs:
+  prepare:
+    name: Prepare build metadata
+    runs-on: ubuntu-22.04
+    outputs:
+      build-ref: ${{ steps.metadata.outputs.build-ref }}
+      package-version: ${{ steps.metadata.outputs.package-version }}
+      release-tag: ${{ steps.metadata.outputs.release-tag }}
+    steps:
+      - name: Resolve source and release tag
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_ref="${GITHUB_SHA}"
+          package_version="${GITHUB_SHA}"
+          release_tag=""
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            build_ref="${GITHUB_REF_NAME}"
+            package_version="${GITHUB_REF_NAME}"
+            release_tag="${GITHUB_REF_NAME}"
+          elif [[ "${GITHUB_REF}" == refs/heads/release/* ]]; then
+            release_tag="${GITHUB_REF#refs/heads/release/}"
+            build_ref="${release_tag}"
+            package_version="${release_tag}"
+          fi
+          echo "build-ref=${build_ref}" >> "${GITHUB_OUTPUT}"
+          echo "package-version=${package_version}" >> "${GITHUB_OUTPUT}"
+          echo "release-tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+
   linux-x64:
     name: Linux x64
+    needs: prepare
     runs-on: ubuntu-22.04
+    env:
+      PACKAGE_VERSION: ${{ needs.prepare.outputs.package-version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.build-ref }}
 
       - name: Check tag matches source version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: needs.prepare.outputs.release-tag != ''
         shell: bash
         run: |
           set -euo pipefail
           source_version="$(sed -n 's/.*Version::version("\([^"]*\)").*/\1/p' src/core/version.cpp)"
-          test "v${source_version}" = "${GITHUB_REF_NAME}"
+          test "v${source_version}" = "${RELEASE_TAG}"
 
       - name: Build and test static Linux binary
         shell: bash
@@ -82,12 +115,16 @@ jobs:
 
   windows-x64:
     name: Windows x64
+    needs: prepare
     runs-on: windows-2022
     env:
+      PACKAGE_VERSION: ${{ needs.prepare.outputs.package-version }}
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.build-ref }}
 
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
@@ -162,8 +199,9 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: needs.prepare.outputs.release-tag != ''
     needs:
+      - prepare
       - linux-x64
       - windows-x64
     runs-on: ubuntu-22.04
@@ -192,10 +230,12 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "${GITHUB_REF_NAME}" dist/* \
+          gh release create "${RELEASE_TAG}" dist/* \
             --generate-notes \
-            --title "Trojan ${GITHUB_REF_NAME}" \
+            --title "Trojan ${RELEASE_TAG}" \
             --verify-tag
