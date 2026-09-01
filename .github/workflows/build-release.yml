@@ -117,7 +117,15 @@ jobs:
       - name: Build and test Windows binary
         shell: pwsh
         run: |
-          cmake --build build-windows --config Release --parallel
+          & cmake --build build-windows --config Release --parallel --verbose `
+            2>&1 | Tee-Object -FilePath build-windows/windows-build.log
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+            $message = (Get-Content build-windows/windows-build.log -Tail 60) -join "`n"
+            $message = $message.Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Windows build failed::$message"
+            exit $buildExitCode
+          }
           ctest --test-dir build-windows -C Release --output-on-failure
           & "build-windows/Release/trojan.exe" --version
 
