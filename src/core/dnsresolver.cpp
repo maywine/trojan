@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <boost/asio/error.hpp>
 #include <boost/asio/executor_work_guard.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/system_error.hpp>
 #include <cctype>
@@ -34,6 +35,17 @@ string normalize_host(const string& host)
               normalized.begin(),
               [](unsigned char ch) { return static_cast<char>(tolower(ch)); });
     return normalized;
+}
+
+void cancel_timer(steady_timer& timer)
+{
+    try
+    {
+        timer.cancel();
+    }
+    catch (...)
+    {
+    }
 }
 
 void system_resolve(const string& host, boost::system::error_code& ec, DNSResolver::AddressResults& addresses)
@@ -158,8 +170,7 @@ struct DNSResolver::Impl : public enable_shared_from_this<DNSResolver::Impl>
         for (auto& item : in_flight)
         {
             item.second->expired.store(true);
-            boost::system::error_code ec;
-            item.second->timer.cancel(ec);
+            cancel_timer(item.second->timer);
             for (auto& waiter : item.second->waiters)
             {
                 waiter.state->cancelled.store(true);
@@ -259,41 +270,41 @@ struct DNSResolver::Impl : public enable_shared_from_this<DNSResolver::Impl>
             });
 
         const ResolveFunction worker_resolve = resolve_function;
-        worker_io.post(
-            [weak_impl, job, worker_resolve]()
-            {
-                boost::system::error_code error = boost::asio::error::operation_aborted;
-                AddressResults addresses;
-                if (!job->expired.load())
-                {
-                    error.clear();
-                    try
-                    {
-                        worker_resolve(job->host, error, addresses);
-                    }
-                    catch (const boost::system::system_error& exception)
-                    {
-                        error = exception.code();
-                    }
-                    catch (...)
-                    {
-                        error = boost::asio::error::fault;
-                    }
-                }
-                auto impl = weak_impl.lock();
-                if (impl)
-                {
-                    impl->callback_io.post(
-                        [weak_impl, job, error, addresses]()
-                        {
-                            auto active_impl = weak_impl.lock();
-                            if (active_impl)
-                            {
-                                active_impl->complete_job(job, error, addresses);
-                            }
-                        });
-                }
-            });
+        boost::asio::post(worker_io,
+                          [weak_impl, job, worker_resolve]()
+                          {
+                              boost::system::error_code error = boost::asio::error::operation_aborted;
+                              AddressResults addresses;
+                              if (!job->expired.load())
+                              {
+                                  error.clear();
+                                  try
+                                  {
+                                      worker_resolve(job->host, error, addresses);
+                                  }
+                                  catch (const boost::system::system_error& exception)
+                                  {
+                                      error = exception.code();
+                                  }
+                                  catch (...)
+                                  {
+                                      error = boost::asio::error::fault;
+                                  }
+                              }
+                              auto impl = weak_impl.lock();
+                              if (impl)
+                              {
+                                  boost::asio::post(impl->callback_io,
+                                                    [weak_impl, job, error, addresses]()
+                                                    {
+                                                        auto active_impl = weak_impl.lock();
+                                                        if (active_impl)
+                                                        {
+                                                            active_impl->complete_job(job, error, addresses);
+                                                        }
+                                                    });
+                              }
+                          });
         return Request(state);
     }
 
@@ -331,8 +342,7 @@ struct DNSResolver::Impl : public enable_shared_from_this<DNSResolver::Impl>
             return;
         }
 
-        boost::system::error_code timer_error;
-        job->timer.cancel(timer_error);
+        cancel_timer(job->timer);
         vector<Waiter> waiters;
         waiters.swap(job->waiters);
         in_flight.erase(active);
@@ -370,14 +380,14 @@ struct DNSResolver::Impl : public enable_shared_from_this<DNSResolver::Impl>
                      const boost::system::error_code& error,
                      const AddressResults& addresses)
     {
-        callback_io.post(
-            [state, handler, error, addresses]()
-            {
-                if (!state->cancelled.load())
-                {
-                    handler(error, addresses);
-                }
-            });
+        boost::asio::post(callback_io,
+                          [state, handler, error, addresses]()
+                          {
+                              if (!state->cancelled.load())
+                              {
+                                  handler(error, addresses);
+                              }
+                          });
     }
 
     io_context& callback_io;
