@@ -90,19 +90,30 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore vcpkg binary cache
-        uses: actions/cache@v4
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: vcpkg-cache
-          key: windows-vcpkg-x64-static-${{ hashFiles('.github/workflows/build-release.yml') }}
+          key: windows-vcpkg-x64-static-v2
 
       - name: Install static dependencies
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            boost-asio:x64-windows-static `
+            boost-date-time:x64-windows-static `
             boost-program-options:x64-windows-static `
+            boost-property-tree:x64-windows-static `
             boost-system:x64-windows-static `
             openssl:x64-windows-static
+
+      - name: Save vcpkg binary cache
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-cache
+          key: windows-vcpkg-x64-static-v2
 
       - name: Configure Windows build
         shell: pwsh
@@ -110,6 +121,7 @@ jobs:
           cmake -S . -B build-windows -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DBoost_INCLUDE_DIR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/include" `
             -DBoost_USE_STATIC_LIBS=ON `
             -DENABLE_MYSQL=OFF `
             -DOPENSSL_USE_STATIC_LIBS=TRUE
