@@ -120,6 +120,7 @@ jobs:
         run: |
           cmake -S . -B build-windows -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static `
             -DBoost_INCLUDE_DIR="$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/include" `
             -DBoost_USE_STATIC_LIBS=ON `
