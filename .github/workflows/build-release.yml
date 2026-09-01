@@ -1,0 +1,180 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  PACKAGE_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
+
+jobs:
+  linux-x64:
+    name: Linux x64
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Check tag matches source version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_version="$(sed -n 's/.*Version::version("\([^"]*\)").*/\1/p' src/core/version.cpp)"
+          test "v${source_version}" = "${GITHUB_REF_NAME}"
+
+      - name: Build and test static Linux binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --platform linux/amd64 \
+            --volume "${GITHUB_WORKSPACE}:/src" \
+            --workdir /src \
+            alpine:3.22 \
+            sh -euxc '
+              apk add --no-cache \
+                bash boost-dev boost1.84-static build-base cmake curl file netcat-openbsd ninja \
+                openssl openssl-dev openssl-libs-static python3
+              cmake -S . -B build-linux -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_EXE_LINKER_FLAGS=-static \
+                -DBoost_USE_STATIC_LIBS=ON \
+                -DDEFAULT_CONFIG=config.json \
+                -DENABLE_MYSQL=OFF \
+                -DOPENSSL_USE_STATIC_LIBS=TRUE \
+                -DSYSTEMD_SERVICE=OFF
+              cmake --build build-linux --parallel
+              ctest --test-dir build-linux --output-on-failure
+              strip build-linux/trojan
+              file build-linux/trojan | grep -q "statically linked"
+            '
+
+      - name: Package Linux release
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="trojan-${PACKAGE_VERSION}-linux-x64"
+          mkdir -p "package/${package}"
+          cp build-linux/trojan "package/${package}/trojan"
+          cp -R examples "package/${package}/examples"
+          cp CONTRIBUTORS.md LICENSE README.md "package/${package}/"
+          cp examples/server.json-example "package/${package}/config.json"
+          tar -C package -czf "${package}.tar.gz" "${package}"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x64
+          path: trojan-*-linux-x64.tar.gz
+          if-no-files-found: error
+
+  windows-x64:
+    name: Windows x64
+    runs-on: windows-2022
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: windows-vcpkg-x64-static-${{ hashFiles('.github/workflows/build-release.yml') }}
+
+      - name: Install static dependencies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            boost-program-options:x64-windows-static `
+            boost-system:x64-windows-static `
+            openssl:x64-windows-static
+
+      - name: Configure Windows build
+        shell: pwsh
+        run: |
+          cmake -S . -B build-windows -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DBoost_USE_STATIC_LIBS=ON `
+            -DENABLE_MYSQL=OFF `
+            -DOPENSSL_USE_STATIC_LIBS=TRUE
+
+      - name: Build and test Windows binary
+        shell: pwsh
+        run: |
+          cmake --build build-windows --config Release --parallel
+          ctest --test-dir build-windows -C Release --output-on-failure
+          & "build-windows/Release/trojan.exe" --version
+
+      - name: Package Windows release
+        shell: pwsh
+        run: |
+          $package = "trojan-$env:PACKAGE_VERSION-windows-x64"
+          New-Item -ItemType Directory -Force -Path "package/$package" | Out-Null
+          Copy-Item "build-windows/Release/trojan.exe" "package/$package/trojan.exe"
+          Copy-Item -Recurse -Path examples -Destination "package/$package/examples"
+          Copy-Item -Path @("CONTRIBUTORS.md", "LICENSE", "README.md") -Destination "package/$package/"
+          Copy-Item examples/client.json-example "package/$package/config.json"
+          Compress-Archive -Path "package/$package" -DestinationPath "$package.zip" -CompressionLevel Optimal
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          path: trojan-*-windows-x64.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - linux-x64
+      - windows-x64
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux-x64
+          path: dist
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows-x64
+          path: dist
+
+      - name: Create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ./* > SHA256SUMS
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --generate-notes \
+            --title "Trojan ${GITHUB_REF_NAME}" \
+            --verify-tag
