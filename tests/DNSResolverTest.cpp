@@ -11,6 +11,7 @@
 
 #include "core/dnsresolver.h"
 #include <atomic>
+#include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <chrono>
 #include <iostream>
@@ -47,7 +48,7 @@ int main()
                                  return;
                              }
                              ++fast_calls;
-                             addresses.emplace_back(address::from_string("127.0.0.1"));
+                             addresses.emplace_back(make_address("127.0.0.1"));
                          });
 
     int slow_timeouts       = 0;
@@ -132,7 +133,7 @@ int main()
             }
         });
 
-    auto work = make_shared<io_context::work>(io_context);
+    auto work = make_shared<executor_work_guard<io_context::executor_type>>(io_context.get_executor());
     steady_timer stop_timer(io_context);
     stop_timer.expires_after(std::chrono::milliseconds(300));
     stop_timer.async_wait([&work](const boost::system::error_code&) { work.reset(); });

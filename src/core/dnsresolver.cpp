@@ -12,6 +12,7 @@
 #include "dnsresolver.h"
 #include <algorithm>
 #include <boost/asio/error.hpp>
+#include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/system/system_error.hpp>
 #include <cctype>
@@ -114,7 +115,7 @@ struct DNSResolver::Impl : public enable_shared_from_this<DNSResolver::Impl>
 
     Impl(io_context& callback_io, Options options, ResolveFunction resolve_function)
         : callback_io(callback_io),
-          worker_work(new io_context::work(worker_io)),
+          worker_work(new WorkGuard(worker_io.get_executor())),
           options(std::move(options)),
           resolve_function(resolve_function ? std::move(resolve_function) : ResolveFunction(system_resolve)),
           outstanding_jobs(0),
@@ -189,7 +190,7 @@ struct DNSResolver::Impl : public enable_shared_from_this<DNSResolver::Impl>
         }
 
         boost::system::error_code address_error;
-        auto numeric_address = address::from_string(host, address_error);
+        auto numeric_address = make_address(host, address_error);
         if (!address_error)
         {
             post_result(state, std::move(handler), boost::system::error_code(), AddressResults {numeric_address});
@@ -381,7 +382,8 @@ struct DNSResolver::Impl : public enable_shared_from_this<DNSResolver::Impl>
 
     io_context& callback_io;
     io_context worker_io;
-    unique_ptr<io_context::work> worker_work;
+    typedef executor_work_guard<io_context::executor_type> WorkGuard;
+    unique_ptr<WorkGuard> worker_work;
     vector<thread> workers;
     Options options;
     ResolveFunction resolve_function;
